@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version / tag (e.g. v0.1.0)"
+        required: true
+      description:
+        description: "Release description / notes"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # rdev needs X11 dev headers on Linux.
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libxi-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          bin=keep_forward
+          out=keep_forward-${{ inputs.version }}-${{ matrix.target }}
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "$out.zip" "./target/${{ matrix.target }}/release/$bin.exe"
+            echo "ASSET=$out.zip" >> "$GITHUB_ENV"
+          else
+            tar -czf "$out.tar.gz" -C "target/${{ matrix.target }}/release" "$bin"
+            echo "ASSET=$out.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          body: ${{ inputs.description }}
+          files: ${{ env.ASSET }}
