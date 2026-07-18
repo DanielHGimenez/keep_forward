@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use rdev::{listen, simulate, Event, EventType, Key};
+use rdev::{listen, Event, EventType, Key};
+#[cfg(not(windows))]
+use rdev::simulate;
 
 static HOLDING: AtomicBool = AtomicBool::new(false);
 // Set by the worker right before it simulates a W press, so the listener can
@@ -19,6 +21,39 @@ fn should_toggle(satisfied: bool, already_active: bool) -> bool {
 /// True when every key of the chosen combo is currently held.
 fn combo_satisfied(combo: &HashSet<Key>, held: &HashSet<Key>) -> bool {
     combo.iter().all(|k| held.contains(k))
+}
+
+/// Press or release the W key. On Windows we inject the hardware scancode
+/// (0x11 = W): games read Raw Input / DirectInput and ignore rdev's
+/// virtual-key-only events. Elsewhere rdev's simulate is fine.
+#[cfg(windows)]
+fn send_w(down: bool) {
+    use std::mem::{size_of, zeroed};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE,
+    };
+    unsafe {
+        let mut input: INPUT = zeroed();
+        input.r#type = INPUT_KEYBOARD;
+        input.Anonymous.ki.wScan = 0x11; // W, keyboard set 1 scancode
+        input.Anonymous.ki.dwFlags =
+            KEYEVENTF_SCANCODE | if down { 0 } else { KEYEVENTF_KEYUP };
+        if SendInput(1, &input, size_of::<INPUT>() as i32) != 1 {
+            eprintln!("SendInput failed");
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn send_w(down: bool) {
+    let ev = if down {
+        EventType::KeyPress(Key::KeyW)
+    } else {
+        EventType::KeyRelease(Key::KeyW)
+    };
+    if let Err(e) = simulate(&ev) {
+        eprintln!("simulate failed: {e:?}");
+    }
 }
 
 fn main() {
@@ -87,24 +122,17 @@ fn main() {
         }
     });
 
-    // Worker loop: act on HOLDING edges. simulate() lives here, off the listen thread.
+    // Worker loop: act on HOLDING edges. send_w() lives here, off the listen thread.
     let mut pressed = false;
     loop {
         let want = HOLDING.load(Ordering::Relaxed);
         if want != pressed {
             if want {
-                // ponytail: flag-before-simulate can race a real W in the same
+                // ponytail: flag-before-send can race a real W in the same
                 // instant; fine for a single edge. Tighten only if it misfires.
                 SUPPRESS_W.store(true, Ordering::Relaxed);
             }
-            let ev = if want {
-                EventType::KeyPress(Key::KeyW)
-            } else {
-                EventType::KeyRelease(Key::KeyW)
-            };
-            if let Err(e) = simulate(&ev) {
-                eprintln!("simulate failed: {e:?}");
-            }
+            send_w(want);
             pressed = want;
         }
         thread::sleep(Duration::from_millis(50));
