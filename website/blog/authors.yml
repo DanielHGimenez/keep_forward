@@ -1,0 +1,23 @@
+yangshun:
+  name: Daniel H. Gimenez
+  title: Software developer
+  url: https://www.linkedin.com/in/danielhgimenez/
+  image_url: https://github.com/DanielHGimenez.png
+  page: true
+  socials:
+    linkedin: danielhgimenez
+    github: DanielHGimenez
+#
+#slorber:
+#  name: Sébastien Lorber
+#  title: Docusaurus maintainer
+#  url: https://sebastienlorber.com
+#  image_url: https://github.com/slorber.png
+#  page:
+#    # customize the url of the author page at /blog/authors/<permalink>
+#    permalink: '/all-sebastien-lorber-articles'
+#  socials:
+#    x: sebastienlorber
+#    linkedin: sebastienlorber
+#    github: slorber
+#    newsletter: https://thisweekinreact.com
